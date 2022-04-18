@@ -1,0 +1,10 @@
+#! /bin/sh
+
+export AFEPACK_PATH="~/Packages/AFEPack"
+export AFEPACK_TEMPLATE_PATH="$AFEPACK_PATH/template/tetrahedron:$AFEPACK_PATH/template/twin_tetrahedron:$AFEPACK_PATH/template/four_tetrahedron"
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/hfzhan/Packages/deal.II/lib
+
+export OMP_NUM_THREADS=4
+
+exec ./main $*
+
