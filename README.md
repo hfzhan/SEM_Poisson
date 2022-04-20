@@ -11,5 +11,6 @@ require package AFEPack and Deal.II
 ./mesh_generation/main a nx ny nz: 
 	divive $[0, a]^3$ with equal partition number nx, ny and nz for each direction
 
-./visualize/run file_name_of_mesh file_name_of_solution N_local_refine tol:
-	generate opendx file for visualization
+in folder ./visualize
+    ./run file_name_of_mesh file_name_of_solution N_local_refine tol:
+	    generate opendx file for visualization

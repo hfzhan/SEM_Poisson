@@ -28,12 +28,6 @@ std::vector<std::vector<int> > transform_local;
 std::vector<std::vector<double> > weight_transform_local;
 int M;
 
-double calc_det(const double * v0, const double * v1, const double * v2)
-{// calculate determinant whose row consists of v1, v2, v3
-    return v0[0]*v1[1]*v2[2] + v0[1]*v1[2]*v2[0] + v0[2]*v1[0]*v2[1]
-        - v0[0]*v1[2]*v2[1] - v0[1]*v1[0]*v2[2] - v0[2]*v1[1]*v2[0];
-}
-
 double calc_volume_tetrahedron(const double * v0, const double * v1, const double * v2, const double * v3)
 {
 	return fabs(((v1[0] - v0[0]) * (v2[1] - v0[1]) * (v3[2] - v0[2])
@@ -54,43 +48,6 @@ double calc_volume_triangle(const double * v0, const double * v1, const double *
     return .5 * fabs(sqrt(pow(p1[1] * p2[2] - p1[2] * p2[1], 2) +
                           pow(p1[0] * p2[2] - p1[2] * p2[0], 2) +
                           pow(p1[0] * p2[1] - p1[1] * p2[0], 2)));
-}
-
-AFEPack::Point<DIM> calc_gradient(const std::vector<AFEPack::Point<DIM> >& v, const std::vector<double>& val_vertex)
-{
-    AFEPack::Point<DIM> ans, one;
-    ans[0] = ans[1] = ans[2] = 0;
-    one[0] = one[1] = one[2] = 1;
-    std::vector<AFEPack::Point<DIM> > tmp(3);
-    for (int i = 0; i < 4; ++i){
-        for (int j = 0; j < i; ++j)   tmp[j]   = v[i] - v[j];
-        for (int j = i+1; j < 4; ++j) tmp[j-1] = v[i] - v[j];
-        double det = calc_det(tmp[0], tmp[1], tmp[2]);
-        for (int j = 0; j < 3; ++j)   tmp[j]   -= v[i];
-        ans[0] += calc_det(one, tmp[1], tmp[2]) / det * val_vertex[i];
-        ans[1] += calc_det(tmp[0], one, tmp[2]) / det * val_vertex[i];
-        ans[2] += calc_det(tmp[0], tmp[1], one) / det * val_vertex[i];
-    }
-    return ans;
-}
-
-AFEPack::Point<DIM> calc_cross_product(const AFEPack::Point<DIM>& u, const AFEPack::Point<DIM>& v)
-{
-    AFEPack::Point<DIM> ans;
-    ans[0] = u[1]*v[2] - u[2]*v[1];
-    ans[1] = u[2]*v[0] - u[0]*v[2];
-    ans[2] = u[0]*v[1] - u[1]*v[0];
-    return ans;
-}
-
-double calc_inner_product(const AFEPack::Point<DIM>& u, const AFEPack::Point<DIM>& v)
-{
-    return u[0]*v[0] + u[1]*v[1] + u[2]*v[2];
-}
-
-double calc_length(const AFEPack::Point<DIM>& u)
-{
-    return sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
 }
 
 double calc_err(const std::vector<AFEPack::Point<DIM> >& vertex, const std::vector<AFEPack::Point<DIM> >& vertex_p,
@@ -284,6 +241,7 @@ double calc_coefficient_a(int alpha, int beta, int ind, int k)
             return 0;
         return 2.0 * (k+alpha) * (k+beta) / ((2*k+alpha+beta) * (2*k+alpha+beta+1));
     }
+    return 0;
 }
 
 int main(int argc, char * argv[])
@@ -1145,320 +1103,20 @@ int main(int argc, char * argv[])
         for (int i = 0; i < n_3d_geometry; ++i)
             err_global_l2 += pow(err_indicator[i], 2);
         err_global_l2 = sqrt(err_global_l2);
-
-        // calculate jump quantity by traversing all elements
-        int n_2d_geometry = regular_mesh.n_geometry(2);
-        std::vector<AFEPack::Point<DIM> > val_jump(n_2d_geometry);
-        std::vector<int> sign_face(n_2d_geometry, 1); // determine positive minus sign for each face when calculate jump
-        for (int i = 0; i < n_2d_geometry; ++i)
-            val_jump[i][0] = val_jump[i][1] = val_jump[i][2] = 0;
-
-        // for (int i = 0; i < n_3d_geometry; ++i){
-        //     std::vector<AFEPack::Point<DIM> > vertex_local(4);
-        //     std::vector<double> sol_local(4);
-        //     for (int ind_v = 0; ind_v < 4; ++ind_v){
-        //         vertex_local[ind_v] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(ind_v));
-        //         sol_local[ind_v] = val_interp[regular_mesh.geometry(3, i).vertex(ind_v)];
-        //     }
-            
-        //     // add contribution of the gradient from this element, approximate the gradient on face with 5 vertexex by mean value
-        //     AFEPack::Point<DIM> gradient_local;
-        //     switch (regular_mesh.geometry(3, i).n_vertex()){
-        //     case 4:
-        //         // calculate the gradient
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         for (int ind = 0; ind <= DIM; ++ind)
-        //             if (sign_face[regular_mesh.geometry(3, i).boundary(ind)] > 0)
-        //                 val_jump[regular_mesh.geometry(3, i).boundary(ind)] += gradient_local;
-        //             else
-        //                 val_jump[regular_mesh.geometry(3, i).boundary(ind)] -= gradient_local;
-        //         break;
-        //     case 5: // twin tetrahedron
-        //         // tetrahedron 0124
-        //         vertex_local[3] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(4));
-        //         sol_local[3] = val_interp[regular_mesh.geometry(3, i).vertex(4)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(2)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(2)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(2)] -= gradient_local;
-        //         gradient_local *= 0.5;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(0)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] -= gradient_local;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(3)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] -= gradient_local;
-        //         // tetrahedron 0324
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(3));
-        //         sol_local[1] = val_interp[regular_mesh.geometry(3, i).vertex(3)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(1)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(1)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(1)] -= gradient_local;
-        //         gradient_local *= 0.5;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(0)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] -= gradient_local;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(3)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] -= gradient_local;
-        //         break;
-        //     case 7: // four tetrahedron
-        //         // tetrahedron 0156
-        //         vertex_local[2] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(5));
-        //         vertex_local[3] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(6));
-        //         sol_local[2] = val_interp[regular_mesh.geometry(3, i).vertex(5)];
-        //         sol_local[3] = val_interp[regular_mesh.geometry(3, i).vertex(6)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(1)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(1)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(1)] -= gradient_local;
-        //         gradient_local *= 0.5;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(5)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(5)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(5)] -= gradient_local;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(6)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(6)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(6)] -= gradient_local;
-        //         // tetrahedron 0246
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(2));
-        //         vertex_local[2] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(4));
-        //         sol_local[1] = val_interp[regular_mesh.geometry(3, i).vertex(2)];
-        //         sol_local[2] = val_interp[regular_mesh.geometry(3, i).vertex(4)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(2)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(2)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(2)] -= gradient_local;
-        //         gradient_local *= 0.5;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(4)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(4)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(4)] -= gradient_local;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(6)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(6)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(6)] -= gradient_local;
-        //         // tetrahedron 0345
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(3));
-        //         vertex_local[3] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(5));
-        //         sol_local[1] = val_interp[regular_mesh.geometry(3, i).vertex(3)];
-        //         sol_local[3] = val_interp[regular_mesh.geometry(3, i).vertex(5)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(3)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(3)] -= gradient_local;
-        //         gradient_local *= 0.5;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(4)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(4)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(4)] -= gradient_local;
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(5)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(5)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(5)] -= gradient_local;
-        //         // tetrahedron 0645
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(3, i).vertex(6));
-        //         sol_local[1] = val_interp[regular_mesh.geometry(3, i).vertex(6)];
-        //         gradient_local = calc_gradient(vertex_local, sol_local);
-        //         if (sign_face[regular_mesh.geometry(3, i).boundary(0)] > 0)
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] += gradient_local;
-        //         else
-        //             val_jump[regular_mesh.geometry(3, i).boundary(0)] -= gradient_local;
-        //     }
-        //     // update flag_face
-        //     for (int j = 0; j < regular_mesh.geometry(3, i).n_boundary(); ++j)
-        //         sign_face[regular_mesh.geometry(3, i).boundary(j)] *= -1;
-        // }
-        
-        // // traverse 2d geometries, evaluate actual jump
-        // std::vector<double> val_jump_actual(n_2d_geometry, -1);
-        // for (int i = 0; i < n_2d_geometry; ++i){
-        //     // find area
-        //     int flag_area_max = 0;
-        //     double area = calc_volume_triangle(regular_mesh.point(regular_mesh.geometry(2, i).vertex(0)),
-        //                                        regular_mesh.point(regular_mesh.geometry(2, i).vertex(1)),
-        //                                        regular_mesh.point(regular_mesh.geometry(2, i).vertex(2)));
-        //     if (regular_mesh.geometry(2, i).n_vertex() == 4){
-        //         // find largest area
-        //         double area_t;
-        //         area_t = calc_volume_triangle(regular_mesh.point(regular_mesh.geometry(2, i).vertex(0)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(1)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(3)));
-        //         if (area < area_t){ area = area_t; flag_area_max = 1;}
-        //         area_t = calc_volume_triangle(regular_mesh.point(regular_mesh.geometry(2, i).vertex(0)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(2)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(3)));
-        //         if (area < area_t){ area = area_t; flag_area_max = 2;}
-        //         area_t = calc_volume_triangle(regular_mesh.point(regular_mesh.geometry(2, i).vertex(1)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(2)),
-        //                                       regular_mesh.point(regular_mesh.geometry(2, i).vertex(3)));
-        //         if (area < area_t){ area = area_t; flag_area_max = 3;}
-        //     }
-        //     // find vertex index
-        //     std::vector<AFEPack::Point<DIM> > vertex_local(3);
-        //     for (int j = 0; j < 3; ++j)
-        //         vertex_local[j] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(j));
-        //     switch (flag_area_max){
-        //     case 1:
-        //         vertex_local[2] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(3));
-        //         break;
-        //     case 2:
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(2));
-        //         vertex_local[2] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(3));
-        //         break;
-        //     case 3:
-        //         vertex_local[0] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(1));
-        //         vertex_local[1] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(2));
-        //         vertex_local[2] = regular_mesh.point(regular_mesh.geometry(2, i).vertex(3));
-        //         break;
-        //     }
-        //     // calculate outer normal vector and the projection
-        //     AFEPack::Point<DIM> vec_outer_normal = calc_cross_product(vertex_local[1] - vertex_local[0], vertex_local[2] - vertex_local[0]);
-        //     double tmp = pow(calc_inner_product(val_jump[i], vec_outer_normal) / calc_length(vec_outer_normal), 2);
-        //     val_jump_actual[i] = tmp * area;
-        // }
-
-        std::vector<double> val_jump_actual(n_2d_geometry, 0);
-        for (int i = 0; i < n_3d_geometry; ++i){
-            int n_vertex_local = regular_mesh.geometry(3, i).n_vertex();
-            std::vector<int> ind_dof(n_vertex_local);
-            for (int j = 0; j < n_vertex_local; ++j)
-                ind_dof[j] = regular_mesh.geometry(3, i).vertex(j);
-            int n_boundary_local = regular_mesh.geometry(3, i).n_boundary();
-            std::vector<int> ind_bnd(n_boundary_local);
-            for (int j = 0; j < n_boundary_local; ++j)
-                ind_bnd[j] = regular_mesh.geometry(3, i).boundary(j);
-            double volume, val_barycenter;
-
-            switch (n_vertex_local){
-            case 4:
-                volume = calc_volume_tetrahedron(regular_mesh.point(ind_dof[0]), regular_mesh.point(ind_dof[1]),
-                                                 regular_mesh.point(ind_dof[2]), regular_mesh.point(ind_dof[3]));
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[1]] + val_interp[ind_dof[2]] + val_interp[ind_dof[3]]) * 0.25;
-                val_jump_actual[ind_bnd[0]] += val_barycenter * volume * sign_face[ind_bnd[0]];
-                val_jump_actual[ind_bnd[1]] += val_barycenter * volume * sign_face[ind_bnd[1]];
-                val_jump_actual[ind_bnd[2]] += val_barycenter * volume * sign_face[ind_bnd[2]];
-                val_jump_actual[ind_bnd[3]] += val_barycenter * volume * sign_face[ind_bnd[3]];
-                break;
-            case 5:
-                volume = calc_volume_tetrahedron(regular_mesh.point(ind_dof[0]), regular_mesh.point(ind_dof[1]),
-                                                 regular_mesh.point(ind_dof[3]), regular_mesh.point(ind_dof[4]));
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[2]] + val_interp[ind_dof[4]]) * 0.25
-                    + (val_interp[ind_dof[1]] + val_interp[ind_dof[3]]) * 0.25 * 0.5;
-                val_jump_actual[ind_bnd[0]] += val_barycenter * volume * sign_face[ind_bnd[0]];
-                val_jump_actual[ind_bnd[1]] += val_barycenter * volume * sign_face[ind_bnd[1]];
-                val_jump_actual[ind_bnd[2]] += val_barycenter * volume * sign_face[ind_bnd[2]];
-                val_jump_actual[ind_bnd[3]] += val_barycenter * volume * sign_face[ind_bnd[3]];
-                break;
-            case 7:
-                volume = calc_volume_tetrahedron(regular_mesh.point(ind_dof[0]), regular_mesh.point(ind_dof[1]),
-                                                 regular_mesh.point(ind_dof[2]), regular_mesh.point(ind_dof[3]));
-                val_barycenter = val_interp[ind_dof[0]] * 0.25
-                    + (val_interp[ind_dof[1]] + val_interp[ind_dof[2]] + val_interp[ind_dof[3]]) * 0.25 * 0.25
-                    + (val_interp[ind_dof[4]] + val_interp[ind_dof[5]] + val_interp[ind_dof[6]]) * 0.25 * 0.75;
-                val_jump_actual[ind_bnd[4]] += val_barycenter * volume * sign_face[ind_bnd[4]];
-                val_jump_actual[ind_bnd[5]] += val_barycenter * volume * sign_face[ind_bnd[5]];
-                val_jump_actual[ind_bnd[6]] += val_barycenter * volume * sign_face[ind_bnd[6]];
-                volume *= 0.25;
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[4]] + val_interp[ind_dof[5]] + val_interp[ind_dof[6]]) * 0.25;
-                val_jump_actual[ind_bnd[0]] += val_barycenter * volume * sign_face[ind_bnd[0]];
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[1]] + val_interp[ind_dof[5]] + val_interp[ind_dof[6]]) * 0.25;
-                val_jump_actual[ind_bnd[1]] += val_barycenter * volume * sign_face[ind_bnd[1]];
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[2]] + val_interp[ind_dof[4]] + val_interp[ind_dof[6]]) * 0.25;
-                val_jump_actual[ind_bnd[2]] += val_barycenter * volume * sign_face[ind_bnd[2]];
-                val_barycenter = (val_interp[ind_dof[0]] + val_interp[ind_dof[3]] + val_interp[ind_dof[4]] + val_interp[ind_dof[5]]) * 0.25;
-                val_jump_actual[ind_bnd[3]] += val_barycenter * volume * sign_face[ind_bnd[3]];
-                break;
-            }
-            
-            // update flag_face
-            for (int j = 0; j < regular_mesh.geometry(3, i).n_boundary(); ++j)
-                sign_face[regular_mesh.geometry(3, i).boundary(j)] *= -1;
-        }        
-        
-        // assign 0 for boundary face
-        for (int i = 0; i < n_2d_geometry; ++i)
-            if (regular_mesh.geometry(2, i).boundaryMark() == 1)
-                val_jump_actual[i] = 0;
-
-        // traverse 3d geometries, add contribution from jump
-        std::vector<double> err_jump_l2(n_3d_geometry, 0);
-        double err_max_jump_l2 = 0;
-        double vol_max_jump;
-        for (int i = 0; i < n_3d_geometry; ++i){
-            // for (int j = 0; j < regular_mesh.geometry(3, i).n_boundary(); ++j)
-            //     err_jump_l2[i] += val_jump_actual[regular_mesh.geometry(3, i).boundary(j)];
-            // err_jump_l2[i] = sqrt(err_jump_l2[i]);
-            double val_max = 0;
-            for (int j = 0; j < regular_mesh.geometry(3, i).n_boundary(); ++j)
-                if (val_max < fabs(val_jump_actual[regular_mesh.geometry(3, i).boundary(j)]))
-                    val_max = fabs(val_jump_actual[regular_mesh.geometry(3, i).boundary(j)]);
-            double volume;
-            if (regular_mesh.geometry(3, i).n_vertex() == 4)
-                volume = calc_volume_tetrahedron(regular_mesh.point(regular_mesh.geometry(3, i).vertex(0)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(1)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(2)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(3)));
-            else
-                volume = calc_volume_tetrahedron(regular_mesh.point(regular_mesh.geometry(3, i).vertex(0)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(1)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(3)),
-                                                 regular_mesh.point(regular_mesh.geometry(3, i).vertex(4)));
-            double h = 0;
-            int n_vertex_local = regular_mesh.geometry(3, i).n_vertex();
-            for (int j = 0; j < n_vertex_local-1; ++j)
-                for (int k = j+1; k < n_vertex_local; ++k){
-                    double d = distance(regular_mesh.point(regular_mesh.geometry(3, i).vertex(j)),
-                                        regular_mesh.point(regular_mesh.geometry(3, i).vertex(k)));
-                    if (d > h) h = d;
-                }
-            // err_jump_l2[i] = val_max;
-            err_jump_l2[i] = val_max / h;
-            if (err_jump_l2[i] > err_max_jump_l2){
-                err_max_jump_l2 = err_jump_l2[i];
-                vol_max_jump = h;
-            }
-        }
         
         // calculate error indicator
         err_max_local_l2 = 0;
-        for (int i = 0; i < n_3d_geometry; ++i){
-            double h = 0;
-            int n_vertex_local = regular_mesh.geometry(3, i).n_vertex();
-            for (int j = 0; j < n_vertex_local-1; ++j)
-                for (int k = j+1; k < n_vertex_local; ++k){
-                    double d = distance(regular_mesh.point(regular_mesh.geometry(3, i).vertex(j)),
-                                        regular_mesh.point(regular_mesh.geometry(3, i).vertex(k)));
-                    if (d > h) h = d;
-                }
-            // err_indicator[i] = h * err_indicator[i];
-            // err_indicator[i] = sqrt(pow(h, 2) * pow(err_indicator[i], 2) + h * pow(err_jump_l2[i], 2));
-            err_indicator[i] += err_jump_l2[i];
+        for (int i = 0; i < n_3d_geometry; ++i)
             if (err_indicator[i] > err_max_local_l2)
                 err_max_local_l2 = err_indicator[i];
-        }
         
         // output error
-        std::cout << "n_refine = " << n_refine << ", l2 error = " << err_global_l2
-                  << ", l2 error (jump) = " << err_max_jump_l2 << ", with jump " << err_max_jump_l2*vol_max_jump << ", with mesh size " << vol_max_jump << '\n';
+        std::cout << "n_refine = " << n_refine << ", l2 error = " << err_global_l2 << '\n';
         std::cout << "\tn_dof = " << regular_mesh.n_geometry(0) << ", n_element = " << regular_mesh.n_geometry(3) << '\n';
         if (err_global_l2 < tol_refine_l2) break;
     }
 
-
-    // irregular_mesh_output.semiregularize();
-    // irregular_mesh_output.regularize(false);
+    
     RegularMesh<DIM>& regular_mesh_output = irregular_mesh_output.regularMesh();
     // regular_mesh_output.writeOpenDXData("mesh_refine_output.dx");
 
